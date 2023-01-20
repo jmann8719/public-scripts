@@ -3,8 +3,8 @@ Connect-AzAccount -Identity
 
 # Variable Definitions.
 $SubscriptionID = Get-AzSubscription | Select-Object -ExpandProperty ID
-$StorageAccount = Get-AzStorageAccount | Where-Object { $_.StorageAccountName -like 'profiles*' } | Select-Object -ExpandProperty StorageAccountName
-$ResourceGroup = Get-AzStorageAccount | Where-Object { $_.StorageAccountName -like 'profiles*' } | Select-Object -ExpandProperty ResourceGroupName
+$StorageAccount = Get-AzStorageAccount | Where-Object { ($_.ResourceGroupName -like '*fileservers*') -and ($_.Kind -eq 'FileStorage') } | Select-Object -ExpandProperty StorageAccountName
+$ResourceGroup = Get-AzStorageAccount | Where-Object { ($_.ResourceGroupName -like '*fileservers*') -and ($_.Kind -eq 'FileStorage') } | Select-Object -ExpandProperty ResourceGroupName
 $FileShare = Get-AzRmStorageShare -ResourceGroupName $ResourceGroup -StorageAccountName $StorageAccount | Select-Object -ExpandProperty Name
 
 # Set Subscription and Import Az Modules.
