@@ -1,38 +1,40 @@
-<#
-.SYNOPSIS
-Script to install and configure Language Packs via Install-Language
-.LINK
-https://github.com/StefanDingemanse
-#>
+# Specify Language Pack
+$TargetLanguage = "EN-GB"
 
-$LanguagePacks = "EN-GB"
-$DefaultLanguage = "EN-GB"
-
-$SaveVerbosePreference = $VerbosePreference
-$VerbosePreference = 'Continue'
 $VMTime = Get-Date
 $LogTime = $VMTime.ToUniversalTime()
 
-Start-Transcript -Path "C:\Windows\Temp\LanguagePackInstallation.log" -Append
-Write-Host "################# New Script Run #################"
-Write-Host "Current Time (UTC-0): $LogTime"
-Write-Host "The following Language Packs will be installed"
-Write-Host "$LanguagePacks"
+Start-Transcript -Path "$env:Temp\LanguagePack-$TargetLanguage-Install.log" -Append
+Write-Host "Current Time: $LogTime"
+Write-Host "The following Language Pack will be installed: $TargetLanguage"
 
+# Disables Scheduled Tasks
 Disable-ScheduledTask -TaskPath "\Microsoft\Windows\AppxDeploymentClient\" -TaskName "Pre-Staged App Cleanup" | Out-Null
+Disable-ScheduledTask -TaskPath "\Microsoft\Windows\MUI\" -TaskName "LPRemove" | Out-Null
+Disable-ScheduledTask -TaskPath "\Microsoft\Windows\LanguageComponentsInstaller" -TaskName "Uninstallation" | Out-Null
+reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Control Panel\International" /v "BlockCleanupOfUnusedPreinstalledLangPacks" /t REG_DWORD /d 1 /f | Out-Null
 
-foreach ($Language in $LanguagePacks) {
-    Write-Host "Installing Language Pack for: $Language"
-    Install-Language $Language
-    Write-Host "Installing Language Pack for: $Language Completed."
-}
-if ($DefaultLanguage -eq $null) {
-    Write-Host "Default Language isn't configured."
+# Language Pack Installation
+Write-Host "Installing Language Pack for: $TargetLanguage"
+Install-Language $TargetLanguage
+Write-Host "Installing Language Pack for: $TargetLanguage Completed."
+
+# Adds Language Pack for Selection
+$LanguageList = Get-WinUserLanguageList
+$LanguageList.Add("$TargetLanguage")
+Set-WinUserLanguageList $LanguageList -Force
+
+$DefaultLanguage = Read-Host "Do you want to set $TargetLanguage as default? (Y/N)"
+
+# Sets Language Pack as Default
+if ($DefaultLanguage.ToLower() -eq "Y") {
+    Write-Host "Setting Default Language to: $TargetLanguage"
+    Set-SystemPreferredUILanguage $TargetLanguage
+    Set-WinUILanguageOverride -Language $TargetLanguage
+    Set-WinSystemLocale -SystemLocale $TargetLanguage
 }
 else {
-    Write-Host "Setting Default Language to: $DefaultLanguage"
-    Set-SystemPreferredUILanguage $DefaultLanguage
+    Write-Host "Default Language hasn't been configured."
 }
 
 Stop-Transcript
-$VerbosePreference = $SaveVerbosePreference
