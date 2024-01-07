@@ -1,99 +1,110 @@
-# Microsoft Teams and Web RTC Component Upgrade Script
-# Author: Nerdio Scripted Actions (GitHub)
+# Create Transcript Log File
+$PackageName = "MicrosoftTeams"
+$LogPath = "$env:Temp\$PackageName-Install.log"
 
-# PowerShell Logging
-$SaveVerbosePreference = $VerbosePreference
-$VerbosePreference = 'Continue'
-$VMTime = Get-Date
-$LogTime = $VMTime.ToUniversalTime()
-mkdir "C:\Windows\Temp\NMWLogs\ScriptedActions\MSTeams" -Force
-Start-Transcript -Path "C:\Windows\Temp\NMWLogs\ScriptedActions\MSTeams\PS_Log.txt" -Append
-Write-Host "################# New Script Run #################"
-Write-Host "Current Time (UTC-0): $LogTime"
+Start-Transcript -Path $LogPath -Append -Force
 
-# Check for Public Desktop Shortcut
-$Shortcut = Test-Path -Path "C:\Users\Public\Desktop\Microsoft Teams.lnk"
-if ($Shortcut -eq $true) {
-    Write-Host "Public Desktop Shortcut for Microsoft Teams exists, and will be recreated."
+# Checks for User Sessions
+$AllUsers = query user
+$ActiveUsers = $AllUsers | Select-String -Pattern "Active"
+$DisconnectedUsers = $AllUsers | Select-String -Pattern "Disc"
+
+$AllowedUsernames = @("IRISAdmin", "AVDAdmin")
+
+$LoggedInUsernames = $ActiveUsers | Where-Object { $AllowedUsernames }
+
+if ($LoggedInUsernames.Count -eq 1 -and $DisconnectedUsers.Count -eq 0) {
+    Write-Host "You are the only logged-in user, and there are no disconnected sessions. Continuing..."
 }
 else {
-    Write-Host "Public Desktop Shortcut for Microsoft Teams doesn't exist."
+    Write-Host "There are other active or disconnected sessions, or unauthorised users logged in. Please sign out these users before continuing." -ForegroundColor Red
+    return
 }
 
-# Set Registry Values for Teams to use VDI Optimization
-Write-Host "INFO: Adjusting Registry to Set Teams to AVD Environment Mode" -ForegroundColor Gray
-reg add HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Teams /v "IsWVDEnvironment" /t REG_DWORD /d 1 /f
+# Check FSLogix Version Compatibility
+$Req_FSLogix = '2.9.8716.30241'
+$Ins_FSLogix = (Get-ItemProperty -Path 'HKLM:\Software\FSLogix\Apps' -Name InstallVersion).InstallVersion
 
-# Uninstall Previous Versions of Microsoft Teams and/or Web RTC Component
-# Per-User Teams Uninstallation Logic
-$TeamsPath = [System.IO.Path]::Combine($env:LOCALAPPDATA, 'Microsoft', 'Teams')
-$TeamsUpdateExePath = [System.IO.Path]::Combine($env:LOCALAPPDATA, 'Microsoft', 'Teams', 'Update.exe')
-try {
-    if ([System.IO.File]::Exists($TeamsUpdateExePath)) {
-        Write-Host "INFO: Uninstalling Teams Process (Per-User Installation)"
-        # Uninstall App
-        $proc = Start-Process $TeamsUpdateExePath "-uninstall -s" -PassThru
-        $proc.WaitForExit()
+if ($Ins_FSLogix -ge $Req_FSLogix) {
+    Write-Host "FSLogix version $($Ins_FSLogix). This meets or exceeds the required version. Continuing..."
+}
+else {
+    Write-Host "FSLogix version $($Ins_FSLogix) is below the required version of $($Req_FSLogix). Please upgrade FSLogix to the latest version, and then retry." -ForegroundColor Red
+    return
+}
+
+# Uninstall Function for Microsoft Teams Classic
+function Uninstall-TeamsClassic($TeamsPath) {
+    try {
+        $Process = Start-Process -FilePath "$TeamsPath\Update.exe" -ArgumentList "--uninstall /s" -PassThru -Wait -ErrorAction Stop
+        if ($Process.ExitCode -ne 0) {
+            Write-Error "Uninstallation Failed with Exit Code $($Process.ExitCode)."
+        }
+    }
+    catch {
+        Write-Error $_.Exception.Message
+    }
+}
+
+# Uninstalls Microsoft Teams Classic Machine-wide Installer
+Write-Host "Removing Teams Machine-wide Installer"
+$MachineWide = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -eq "Teams Machine-Wide Installer" }
+
+if ($MachineWide) {
+    $MachineWide.Uninstall()
+}
+else {
+    Write-Host "Teams Machine-Wide Installer Not Found"
+}
+
+# Uninstalls Microsoft Teams Classic from Per-User Installs
+$AllUsers = Get-ChildItem -Path "$($env:SystemDrive)\Users"
+
+foreach ($User in $AllUsers) {
+    Write-Host "Processing User: $($User.Name)"
+    $LocalAppData = "$($env:SystemDrive)\Users\$($User.Name)\AppData\Local\Microsoft\Teams"
+    $ProgramData = "$($env:ProgramData)\$($User.Name)\Microsoft\Teams"
+    if (Test-Path "$LocalAppData\Current\Teams.exe") {
+        Write-Host "Uninstalling Teams for User $($User.Name)"
+        Uninstall-TeamsClassic -TeamsPath $LocalAppData
+    }
+    elseif (Test-Path "$ProgramData\Current\Teams.exe") {
+        Write-Host "Uninstalling Teams for User $($User.Name)"
+        Uninstall-TeamsClassic -TeamsPath $ProgramData
     }
     else {
-        Write-Host "INFO: No Per-User Teams Install Found."
+        Write-Host "Teams Installation Not Found For User $($User.Name)"
     }
-    Write-Host "INFO: Deleting Teams Directories (Per-User Installation)."
-    Remove-Item -Path $TeamsPath -Recurse -ErrorAction SilentlyContinue
-}
-catch {
-    Write-Output "Uninstall Failed with Exception $_.Exception.Message"
 }
 
-# Per-User Teams Uninstallation Logic
-$GetTeams = Get-WMIObject Win32_Product | Where-Object IdentifyingNumber -match "{731F6BAA-A986-45A4-8936-7C3AAAAA760B}"
-if ($null -ne $GetTeams) {
-    Start-Process C:\Windows\System32\msiexec.exe -ArgumentList '/x "{731F6BAA-A986-45A4-8936-7C3AAAAA760B}" /qn /norestart' -Wait
-    Write-Host "INFO: Teams Per-Machine Install Identified, Uninstalling Teams."
-}
+# Folder and Shortcut Removal
+Write-Host "Removing Teams Classic Installation Folder"
+$TeamsFolderCleanup = "$($env:SystemDrive)\Users\*\AppData\Local\Microsoft\Teams"
+Get-Item $TeamsFolderCleanup | Remove-Item -Force -Recurse
 
-# Web RTC Component Uninstallation Logic
-$GetWebRTC = Get-WMIObject Win32_Product | Where-Object IdentifyingNumber -match "{FB41EDB3-4138-4240-AC09-B5A184E8F8E4}"
-if ($null -ne $GetWebRTC) {
-    Start-Process C:\Windows\System32\msiexec.exe -ArgumentList '/x "{FB41EDB3-4138-4240-AC09-B5A184E8F8E4}" /qn /norestart' -Wait
-    Write-Host "INFO: Web RTC Component Install Identified, Uninstalling RTC Component."
-}
+Write-Host "Removing Teams Classic Program Shortcut"
+$TeamsIconCleanup = "$($env:SystemDrive)\Users\*\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Microsoft Teams*.lnk"
+Get-Item $TeamsIconCleanup | Remove-Item -Force -Recurse
 
-# Create Directory for Installers
-mkdir "C:\Windows\Temp\MSTeams_SA\Install" -Force
+# Register as Azure Virtual Desktop Environment
+Write-Host "Register as Azure Virtual Desktop Environment"
+New-Item -Path "HKLM:\SOFTWARE\Microsoft" -Name "Teams" -Force -ErrorAction Ignore
+New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Teams" -Name "IsWVDEnvironment" -Value 1 -Force
 
-# Download MSI Installater for Microsoft Teams
-$DLink = "https://teams.microsoft.com/downloads/desktopurl?env=production&plat=windows&arch=x64&managedInstaller=true&download=true"
-Invoke-WebRequest -Uri $DLink -OutFile "C:\Windows\Temp\MSTeams_SA\Install\Teams_Windows_x64.msi" -UseBasicParsing
+# Allow Side-Loading Trusted Applications
+Write-Host "Allow Side-Loading Trusted Applications"
+New-Item -Path "HKLM:\Software\Policies\Microsoft\Windows" -Name "Appx" -Force -ErrorAction Ignore
+New-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\Appx" -Name "AllowAllTrustedApps" -Value 1 -Force
 
-# Utilise for Machine-Wide Installation
-Write-Host "INFO: Installing Microsoft Teams"
-Start-Process C:\Windows\System32\msiexec.exe `
-    -ArgumentList  '/i C:\Windows\Temp\MSTeams_SA\Install\Teams_Windows_x64.msi /l*v C:\Windows\Temp\NMWLogs\ScriptedActions\MSTeams\Teams_Install_Log.txt ALLUSER=1 ALLUSERS=1 /qn /norestart' -Wait
+# Downloading and Installing WebView2 Runtime
+Write-Host "Downloading and Installing WebView2 Runtime"
+Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile "$($env:Temp)\WebView2.exe"
+Start-Process -FilePath "$($env:Temp)\WebView2.exe" -Wait -ArgumentList "/silent /install" -ErrorAction SilentlyContinue
 
-# Download MSI Installater for Web RTC Component
-$dlink2 = "https://aka.ms/msrdcwebrtcsvc/msi"
-Invoke-WebRequest -Uri $DLink2 -OutFile "C:\Windows\Temp\MSTeams_SA\Install\MsRdcWebRTCSvc_x64.msi" -UseBasicParsing
+# Downloading and Installing Microsoft Teams
+Write-Host "Downloading and Installing Microsoft Teams"
+Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2243204" -OutFile "$($env:Temp)\TeamsBootstrapper.exe"
+Start-Process -FilePath "$($env:Temp)\TeamsBootstrapper.exe" -Wait -ArgumentList "-p" -PassThru -ErrorAction SilentlyContinue
 
-# Utilise for Machine-Wide Installation
-Write-Host "INFO: Installing Web RTC Component"
-Start-Process C:\Windows\System32\msiexec.exe `
-    -ArgumentList '/i C:\Windows\Temp\MSTeams_SA\Install\MsRdcWebRTCSvc_x64.msi /l*v C:\Windows\Temp\NMWLogs\ScriptedActions\MSTeams\WebRTC_install_log.txt /qn /norestart' -Wait
-
-# Installation Summary
-Write-Host "INFO: Finished Running Installers. Check 'C:\Windows\Temp\MSTeams_SA' for Logs on the MSI installations."
-
-# Create Public Desktop Shortcut
-if ($Shortcut -eq $true) {
-    Copy-Item -Path "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Microsoft Teams.lnk" -Destination "C:\Users\Public\Desktop"
-}
-else {
-    Write-Host "Public Desktop Shortcut for Microsoft Teams didn't exist, will not create one."
-}
-
-# Script Completion
-Write-Host "INFO: Script is now Finished. Please allow 5 minutes for Microsoft Teams to appear." -ForegroundColor Green
-
-# End Logging
+# Stop Transcript and Output Log File
 Stop-Transcript
-$VerbosePreference = $SaveVerbosePreference
