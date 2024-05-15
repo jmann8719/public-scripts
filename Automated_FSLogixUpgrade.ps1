@@ -148,6 +148,9 @@ $OldFileList = `
     "$($VHDShare)\*.VHDX"
 
 $OldProcessList = `
+    "C:\Program Files\FSLogix\Apps\frxccd.exe", `
+    "C:\Program Files\FSLogix\Apps\frxccds.exe", `
+    "C:\Program Files\FSLogix\Apps\frxsvc.exe", `
     "%ProgramFiles%\FSLogix\Apps\frxccd.exe", `
     "%ProgramFiles%\FSLogix\Apps\frxccds.exe", `
     "%ProgramFiles%\FSLogix\Apps\frxsvc.exe", `
