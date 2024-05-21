@@ -1,8 +1,8 @@
 # Check Microsoft Teams Existence
-Write-Host "Checking existence of Microsoft Teams..." -ForegroundColor Yellow
-$TeamsInstalled = Get-WmiObject -Class Win32_Product | Sort-Object Name | Select-Object Name, Vendor | Where-Object { ($_.Name -like "*Teams*") -and ($_.Vendor -like "*Microsoft*") }
+Write-Output "Checking existence of Microsoft Teams..."
+$TeamsInstalled = Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { ($_.DisplayName -like "*Teams*") -and ($_.Publisher -like "*Microsoft*") }
 if ($TeamsInstalled) {
-    Write-Host "Microsoft Teams is installed, upgrade will now proceed." -ForegroundColor Green
+    Write-Output "Microsoft Teams is installed, upgrade will now proceed."
 
     # Create Transcript Log File
     $Timestamp = Get-Date -Format 'ddMMyy_HHmm'
@@ -17,7 +17,7 @@ if ($TeamsInstalled) {
         Write-Output "FSLogix version $($Ins_FSLogix). This meets or exceeds the required version. Continuing..."
     }
     else {
-        Write-Output "FSLogix version $($Ins_FSLogix) is below the required version of $($Req_FSLogix). Please upgrade FSLogix to the latest version, and then retry." -ForegroundColor Red
+        Write-Output "FSLogix version $($Ins_FSLogix) is below the required version of $($Req_FSLogix). Please upgrade FSLogix to the latest version, and then retry."
         return
     }
 
@@ -187,6 +187,6 @@ if ($TeamsInstalled) {
 
 }
 else {
-    Write-Host "Microsoft Teams is not installed on this system, script will not continue." -ForegroundColor Red
+    Write-Output "Microsoft Teams is not installed on this system, script will not continue."
     Exit
 }
