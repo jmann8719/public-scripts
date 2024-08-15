@@ -134,6 +134,9 @@ else {
 
 # Retrieve FSLogix Profile Location
 $VHDShare = Get-ItemPropertyValue -LiteralPath HKLM:\SOFTWARE\FSLogix\Profiles -Name "VHDLocations"
+if ($VHDShare.Chars($VHDShare.Length - 1) -eq '\') {
+    $VHDShare = ($VHDShare.TrimEnd('\'))
+}
 
 # List of Paths/Processes/Extensions for Removal
 $OldFileList = `
