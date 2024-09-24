@@ -184,7 +184,7 @@ if ($Installed_TeamsClassic -or $Installed_TeamsNew) {
     Start-Sleep -Seconds 15
 
     # Microsoft Teams Meeting Add-in for Outlook
-    if (-not ($NewTeamsPackageVersion = (Get-AppxPackage -Name MSTeams).Version)) {
+    if (-not ($NewTeamsPackageVersion = (Get-AppxPackage -AllUsers -Name MSTeams).Version)) {
         Write-Output "Microsoft Teams (New) Package is not found, this must be installed to continue."
         exit 1
     }
